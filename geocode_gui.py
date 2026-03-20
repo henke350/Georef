@@ -9,11 +9,13 @@ from tkinter import filedialog, messagebox
 
 from geocode_addresses import (
     AddressColumnError,
+    GeocodingCancelledError,
     DEFAULT_USER_AGENT,
     geocode_excel_file,
     get_excel_columns,
     infer_address_column,
     reveal_in_file_manager,
+    export_to_shapefile,
 )
 
 from map import generate_map
@@ -134,7 +136,7 @@ class GeocodeApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Excel Address Geocoder")
-        self.geometry("560x520")
+        self.geometry("560x420")
         self.resizable(False, False)
 
         ctk.set_appearance_mode("dark")
@@ -143,10 +145,9 @@ class GeocodeApp(ctk.CTk):
         self._file_path_var = ctk.StringVar(value="")
         self._status_var = ctk.StringVar(value="Select an Excel file to begin.")
         self._address_column_var = ctk.StringVar(value="")
-        self._street_column_var = ctk.StringVar(value="")
-        self._postal_column_var = ctk.StringVar(value="")
-        self._city_column_var = ctk.StringVar(value="")
+        self._color_column_var = ctk.StringVar(value="")
         self._popup_selector: MultiSelectDropdown | None = None
+        self._stop_requested = False
 
         self._build_layout()
 
@@ -173,32 +174,25 @@ class GeocodeApp(ctk.CTk):
         self._address_selector = ctk.CTkOptionMenu(column_frame, variable=self._address_column_var, values=["Select column"], state="disabled")
         self._address_selector.pack(fill="x")
 
-        street_label = ctk.CTkLabel(column_frame, text="Street column (optional):")
-        street_label.pack(anchor="w")
-        self._street_selector = ctk.CTkOptionMenu(column_frame, variable=self._street_column_var, values=["Select column"], state="disabled")
-        self._street_selector.pack(fill="x")
-
-        postal_label = ctk.CTkLabel(column_frame, text="Postal code column (optional):")
-        postal_label.pack(anchor="w")
-        self._postal_selector = ctk.CTkOptionMenu(column_frame, variable=self._postal_column_var, values=["Select column"], state="disabled")
-        self._postal_selector.pack(fill="x")
-
-        city_label = ctk.CTkLabel(column_frame, text="City column (optional):")
-        city_label.pack(anchor="w")
-        self._city_selector = ctk.CTkOptionMenu(column_frame, variable=self._city_column_var, values=["Select column"], state="disabled")
-        self._city_selector.pack(fill="x")
-
         popup_label = ctk.CTkLabel(column_frame, text="Map popup columns:")
         popup_label.pack(anchor="w", pady=(10, 0))
         self._popup_selector = MultiSelectDropdown(column_frame, placeholder="Select columns to display")
         self._popup_selector.pack(fill="x")
+
+        color_label = ctk.CTkLabel(column_frame, text="Color markers by column (optional):")
+        color_label.pack(anchor="w", pady=(10, 0))
+        self._color_selector = ctk.CTkOptionMenu(column_frame, variable=self._color_column_var, values=["No coloring"], state="disabled")
+        self._color_selector.pack(fill="x")
 
 
         action_frame = ctk.CTkFrame(self)
         action_frame.pack(fill="x", **padding)
 
         self._start_button = ctk.CTkButton(action_frame, text="Start geocoding", command=self._on_start)
-        self._start_button.pack(fill="x")
+        self._start_button.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        self._stop_button = ctk.CTkButton(action_frame, text="Stop", command=self._on_stop, state="disabled", fg_color="darkred", hover_color="red")
+        self._stop_button.pack(side="left", fill="x", expand=True, padx=(5, 0))
 
         progress_frame = ctk.CTkFrame(self)
         progress_frame.pack(fill="x", **padding)
@@ -227,14 +221,10 @@ class GeocodeApp(ctk.CTk):
             columns = get_excel_columns(path)
         except Exception as exc:
             messagebox.showerror("Unable to read file", f"Could not read the Excel file.\n{exc}")
-            for selector, var in [
-                (self._address_selector, self._address_column_var),
-                (self._street_selector, self._street_column_var),
-                (self._postal_selector, self._postal_column_var),
-                (self._city_selector, self._city_column_var),
-            ]:
-                selector.configure(values=["Select column"], state="disabled")
-                var.set("")
+            self._address_selector.configure(values=["Select column"], state="disabled")
+            self._address_column_var.set("")
+            self._color_selector.configure(values=["No coloring"], state="disabled")
+            self._color_column_var.set("")
             if self._popup_selector is not None:
                 self._popup_selector.clear()
             self._status_var.set("Select a valid Excel file to continue.")
@@ -242,14 +232,10 @@ class GeocodeApp(ctk.CTk):
 
         if not columns:
             messagebox.showerror("No columns found", "The Excel file does not contain any columns.")
-            for selector, var in [
-                (self._address_selector, self._address_column_var),
-                (self._street_selector, self._street_column_var),
-                (self._postal_selector, self._postal_column_var),
-                (self._city_selector, self._city_column_var),
-            ]:
-                selector.configure(values=["Select column"], state="disabled")
-                var.set("")
+            self._address_selector.configure(values=["Select column"], state="disabled")
+            self._address_column_var.set("")
+            self._color_selector.configure(values=["No coloring"], state="disabled")
+            self._color_column_var.set("")
             if self._popup_selector is not None:
                 self._popup_selector.clear()
             self._status_var.set("Select a valid Excel file to continue.")
@@ -258,14 +244,10 @@ class GeocodeApp(ctk.CTk):
         inferred = infer_address_column(columns)
         self._address_selector.configure(values=columns, state="normal")
         self._address_column_var.set(inferred or columns[0])
-        # Set all other selectors to default value
-        for selector, var in [
-            (self._street_selector, self._street_column_var),
-            (self._postal_selector, self._postal_column_var),
-            (self._city_selector, self._city_column_var),
-        ]:
-            selector.configure(values=["Select column"] + columns, state="normal")
-            var.set("Select column")
+
+        # Configure color column selector
+        self._color_selector.configure(values=["No coloring"] + columns, state="normal")
+        self._color_column_var.set("No coloring")
 
         if self._popup_selector is not None:
             preselected = [name for name in ("geocoded_address", "address") if name in columns]
@@ -292,16 +274,31 @@ class GeocodeApp(ctk.CTk):
             if not popup_columns:
                 popup_columns = None
 
+        color_column: str | None = self._color_column_var.get().strip()
+        if color_column == "No coloring":
+            color_column = None
+
+        self._stop_requested = False
         self._start_button.configure(state="disabled")
+        self._stop_button.configure(state="normal")
         self._status_var.set("Geocoding in progress... This may take a while for large files.")
         self._progress_bar.set(0)
 
         thread = threading.Thread(
             target=self._geocode_worker,
-            args=(Path(file_path), column_name, user_agent, popup_columns),
+            args=(Path(file_path), column_name, user_agent, popup_columns, color_column),
             daemon=True,
         )
         thread.start()
+
+    def _on_stop(self) -> None:
+        self._stop_requested = True
+        self._stop_button.configure(state="disabled")
+        self._status_var.set("Stopping... Please wait for current address to finish.")
+
+    def _check_stop(self) -> bool:
+        """Return True if stop was requested."""
+        return self._stop_requested
 
     def _geocode_worker(
         self,
@@ -309,6 +306,7 @@ class GeocodeApp(ctk.CTk):
         column_name: str,
         user_agent: str,
         popup_columns: list[str] | None,
+        color_column: str | None,
     ) -> None:
         try:
             output_path = geocode_excel_file(
@@ -316,7 +314,11 @@ class GeocodeApp(ctk.CTk):
                 address_column=column_name,
                 user_agent=user_agent,
                 progress_callback=self._on_progress_update,
+                stop_check=self._check_stop,
             )
+        except GeocodingCancelledError:
+            self._on_cancelled()
+            return
         except AddressColumnError as exc:
             self._notify_error("Column error", str(exc))
             return
@@ -331,10 +333,18 @@ class GeocodeApp(ctk.CTk):
         map_error = None
         self.after(0, lambda: self._status_var.set("Geocoding complete. Building map..."))
         try:
-            map_path = generate_map(output_path, popup_columns=popup_columns)
+            map_path = generate_map(output_path, popup_columns=popup_columns, color_column=color_column)
         except Exception as exc:
             map_error = str(exc)
         self._on_success(output_path, map_path, map_error)
+
+    def _on_cancelled(self) -> None:
+        def notify() -> None:
+            self._start_button.configure(state="normal")
+            self._stop_button.configure(state="disabled")
+            self._status_var.set("Geocoding stopped by user.")
+
+        self.after(0, notify)
 
     def _on_progress_update(self, current: int, total: int, address: str) -> None:
         def update() -> None:
@@ -348,6 +358,7 @@ class GeocodeApp(ctk.CTk):
     def _notify_error(self, title: str, message: str) -> None:
         def notify() -> None:
             self._start_button.configure(state="normal")
+            self._stop_button.configure(state="disabled")
             self._status_var.set("Geocoding failed. Please review the message and try again.")
             messagebox.showerror(title, message)
 
@@ -356,6 +367,7 @@ class GeocodeApp(ctk.CTk):
     def _on_success(self, output_path: Path, map_path: Path | None, map_error: str | None = None) -> None:
         def notify() -> None:
             self._start_button.configure(state="normal")
+            self._stop_button.configure(state="disabled")
             self._progress_bar.set(1)
             status_message = f"Success! Saved to {output_path.name}."
             if map_path:
@@ -363,12 +375,21 @@ class GeocodeApp(ctk.CTk):
             elif map_error:
                 status_message += " Map generation failed."
             self._status_var.set(status_message)
+            
             details = [f"Geocoded data saved to:\n{output_path}"]
             if map_path:
                 details.append(f"Map saved to:\n{map_path}")
             elif map_error:
                 trimmed = map_error if len(map_error) <= 200 else map_error[:197] + "..."
                 details.append(f"Map generation failed:\n{trimmed}")
+            
+            # Generate shapefile
+            try:
+                shp_path = export_to_shapefile(output_path)
+                details.append(f"Shapefile saved to:\n{shp_path}")
+            except Exception as exc:
+                details.append(f"Shapefile generation failed:\n{str(exc)}")
+            
             messagebox.showinfo("Done", "\n\n".join(details))
             reveal_in_file_manager(output_path)
 

@@ -36,7 +36,7 @@ If you didn’t receive a pre-configured virtual environment, install the requir
 ```powershell
 python -m venv .venv
 & ".\.venv\Scripts\Activate.ps1"
-pip install customtkinter pandas geopy folium openpyxl
+pip install customtkinter pandas geopy folium openpyxl geopandas shapely
 ```
 
 ---
@@ -73,6 +73,10 @@ pip install customtkinter pandas geopy folium openpyxl
   - `longitude`
   - `geocoded_address`
 - **`*_map.html`** – Interactive Folium map with clustered markers.
+- **`*_geocoded.shp`** – Shapefile with all geocoded points (and associated `.shx`, `.dbf`, `.prj`, `.cpg` files).
+  - Ready to import into any GIS software (QGIS, ArcGIS, etc.)
+  - Uses WGS84 (EPSG:4326) coordinate reference system
+  - Contains all columns from the original Excel file plus coordinates
 
 ---
 

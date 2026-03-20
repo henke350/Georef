@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
@@ -17,10 +19,15 @@ DEFAULT_SUFFIX = "_geocoded"
 MIN_DELAY_SECONDS = 1.1
 
 ProgressCallback = Callable[[int, int, str], None]
+StopCheck = Callable[[], bool]
 
 
 class AddressColumnError(ValueError):
     """Raised when an address column is missing or cannot be determined."""
+
+
+class GeocodingCancelledError(Exception):
+    """Raised when geocoding is cancelled by the user."""
 
 
 def get_excel_columns(excel_path: Path) -> list[str]:
@@ -46,6 +53,7 @@ def geocode_excel_file(
     user_agent: str = DEFAULT_USER_AGENT,
     min_delay_seconds: float = MIN_DELAY_SECONDS,
     progress_callback: Optional[ProgressCallback] = None,
+    stop_check: Optional[StopCheck] = None,
 ) -> Path:
     """Geocode addresses in an Excel file and write a new Excel file with coordinates."""
     path = Path(excel_path).expanduser().resolve()
@@ -77,6 +85,10 @@ def geocode_excel_file(
     matched_addresses: list[Optional[str]] = []
 
     for index, value in enumerate(frame[column_name]):
+        # Check if stop was requested
+        if stop_check and stop_check():
+            raise GeocodingCancelledError("Geocoding was cancelled by the user.")
+
         address_text = "" if pd.isna(value) else str(value).strip()
         if progress_callback:
             progress_callback(index + 1, total_rows, address_text)
@@ -105,6 +117,57 @@ def geocode_excel_file(
     output_path = path.with_name(f"{path.stem}{DEFAULT_SUFFIX}{path.suffix}")
     frame.to_excel(output_path, index=False)
     return output_path
+
+
+def export_to_shapefile(
+    geocoded_excel_path: Path,
+    lat_column: str = "latitude",
+    lon_column: str = "longitude",
+) -> Path:
+    """Export geocoded Excel data to a shapefile in the same directory.
+    
+    Args:
+        geocoded_excel_path: Path to the geocoded Excel file.
+        lat_column: Name of the latitude column.
+        lon_column: Name of the longitude column.
+    
+    Returns:
+        Path to the generated shapefile (.shp).
+    
+    Raises:
+        FileNotFoundError: If the Excel file doesn't exist.
+        ValueError: If required columns are missing or no valid coordinates found.
+    """
+    path = Path(geocoded_excel_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Excel file not found: {path}")
+
+    frame = pd.read_excel(path)
+    if frame.empty:
+        raise ValueError("The Excel file does not contain any data rows.")
+
+    if lat_column not in frame.columns or lon_column not in frame.columns:
+        raise ValueError(
+            f"Required columns '{lat_column}' or '{lon_column}' not found in the Excel file."
+        )
+
+    # Filter out rows with missing coordinates
+    valid_rows = frame.dropna(subset=[lat_column, lon_column])
+    if valid_rows.empty:
+        raise ValueError("No rows with valid latitude/longitude coordinates found.")
+
+    # Create geometry column from coordinates (lon, lat order for GIS standard)
+    geometry = [Point(xy) for xy in zip(valid_rows[lon_column], valid_rows[lat_column])]
+
+    # Create GeoDataFrame with EPSG:4326 (WGS84) coordinate system
+    gdf = gpd.GeoDataFrame(valid_rows, geometry=geometry, crs="EPSG:4326")
+
+    # Determine output path (same directory as Excel file, with .shp extension)
+    output_shp = path.with_name(f"{path.stem}.shp")
+
+    # Write shapefile
+    gdf.to_file(output_shp, driver="ESRI Shapefile")
+    return output_shp
 
 
 def reveal_in_file_manager(target: Path) -> None:
