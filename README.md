@@ -1,116 +1,128 @@
-# Excel Address Geocoder – GUI Edition
+# Excel Address Geocoder
 
-This application lets you geocode rows in an Excel workbook and instantly explore the results on an interactive map. Upload a spreadsheet, choose the address columns that should be processed, and decide which fields appear when you click on a map marker – all from a streamlined dark-themed interface.
+A desktop application for geocoding addresses from Excel files and visualizing them on interactive maps. Features a modern dark-themed GUI built with CustomTkinter.
 
 ---
 
-## 1. System Requirements
+## Features
+
+- 📍 **Batch Geocoding** – Process entire Excel spreadsheets with address data
+- 🗺️ **Interactive Maps** – Generate HTML maps with clustered markers using Folium
+- 🎨 **Color-Coded Markers** – Optionally color markers by any column value with auto-generated legend
+- 📋 **Customizable Popups** – Select which columns to display when clicking markers
+- 📦 **Shapefile Export** – Export geocoded data to GIS-ready shapefiles (.shp)
+- ⏹️ **Cancellable Operations** – Stop long-running geocoding at any time
+- 🔍 **Smart Column Detection** – Automatically detects address columns
+
+---
+
+## System Requirements
+
 - Windows 10 or later
-- Python 3.11 (only required if you run from source)
-- Internet connection (the app queries the Nominatim service)
+- Python 3.11+ (only required if running from source)
+- Internet connection (uses OpenStreetMap's Nominatim geocoding service)
 
 ---
 
-## 2. Getting the Application
+## Installation
 
-### Option A – Use the packaged executable (recommended)
-1. Navigate to `dist/GeocodeGUI/`.
-2. Double-click `GeocodeGUI.exe` and wait a moment for the window to appear.
+### Option A – Use the Packaged Executable (Recommended)
 
-### Option B – Run from source
-1. Open PowerShell in the project folder.
-2. Activate the local virtual environment:
+1. Navigate to `dist/GeocodeGUI/`
+2. Double-click `GeocodeGUI.exe`
+
+### Option B – Run from Source
+
+1. Clone or download this repository
+2. Open PowerShell in the project folder
+3. Create and activate a virtual environment:
    ```powershell
+   python -m venv .venv
    & ".\.venv\Scripts\Activate.ps1"
    ```
-3. Launch the GUI:
+4. Install dependencies:
+   ```powershell
+   pip install customtkinter pandas geopy folium openpyxl geopandas shapely
+   ```
+5. Launch the application:
    ```powershell
    python geocode_gui.py
    ```
 
 ---
 
-## 3. First-Time Setup (source users only)
-If you didn’t receive a pre-configured virtual environment, install the required libraries:
+## Usage
 
-```powershell
-python -m venv .venv
-& ".\.venv\Scripts\Activate.ps1"
-pip install customtkinter pandas geopy folium openpyxl geopandas shapely
-```
+### Step 1 – Load Your Workbook
 
----
+- Click **Browse** and select an Excel file (`.xlsx`, `.xls`, `.xlsm`)
+- The app reads all column headers from the first worksheet
 
-## 4. Using the GUI
+### Step 2 – Select Address Column
 
-### Step 1 – Load your workbook
-- Click **Browse** and choose an Excel file (`.xlsx`, `.xls`, `.xlsm`).
-- The app lists all column headers from the first worksheet.
+- Choose the column containing address strings from the **Address column** dropdown
+- The app auto-detects columns with "address" in the name
 
-### Step 2 – Choose address information
-- **Address column:** Select the field that contains complete address strings. The app attempts to guess a column for you.
-- **Optional fields:** If your data splits street, postal code, or city into separate columns, choose them as well. They improve geocoding accuracy but are not required.
+### Step 3 – Configure Map Display (Optional)
 
-### Step 3 – Configure marker popups
-- Open the **Map popup columns** dropdown.
-- Tick one or more columns whose values you want to see when clicking a map point. You can select multiple entries – the preview text updates to show what will be displayed.
+- **Map popup columns:** Select one or more columns to display when clicking map markers
+- **Color markers by column:** Choose a column to color-code markers (e.g., by category, status, or region). A legend will be automatically added to the map.
 
-### Step 4 – Start geocoding
-- Click **Start geocoding**.
-- The status bar shows progress, including the current row being processed.
-- When finished, the app creates a workbook suffixed with `_geocoded.xlsx` and a map HTML file.
-- A message box summarizes output locations and opens the containing folder.
+### Step 4 – Start Geocoding
 
-### Step 5 – Explore the map
-- Open the generated `*_map.html` file in any web browser.
-- Click markers to view the columns you selected in the multi-select dropdown.
+- Click **Start geocoding** to begin processing
+- Progress bar and status text show current progress
+- Click **Stop** to cancel at any time (partial results are preserved)
+
+### Step 5 – View Results
+
+- Output files are created in the same folder as your input file
+- A dialog shows the output location and opens the containing folder
+- Open the `*_map.html` file in any web browser to explore your data
 
 ---
 
-## 5. Output Files
-- **`*_geocoded.xlsx`** – Copy of your original sheet with these extra columns:
-  - `latitude`
-  - `longitude`
-  - `geocoded_address`
-- **`*_map.html`** – Interactive Folium map with clustered markers.
-- **`*_geocoded.shp`** – Shapefile with all geocoded points (and associated `.shx`, `.dbf`, `.prj`, `.cpg` files).
-  - Ready to import into any GIS software (QGIS, ArcGIS, etc.)
-  - Uses WGS84 (EPSG:4326) coordinate reference system
-  - Contains all columns from the original Excel file plus coordinates
+## Output Files
+
+| File | Description |
+|------|-------------|
+| `*_geocoded.xlsx` | Copy of your original data with added `latitude`, `longitude`, and `geocoded_address` columns |
+| `*_map.html` | Interactive Folium map with markers (clustered unless color-coding is used) |
+| `*_geocoded.shp` | ESRI Shapefile with geocoded points (includes `.shx`, `.dbf`, `.prj`, `.cpg` sidecar files) |
+
+**Shapefile notes:**
+- Uses WGS84 (EPSG:4326) coordinate reference system
+- Compatible with QGIS, ArcGIS, and other GIS software
+- Contains all columns from the original Excel file
 
 ---
 
-## 6. Tips for Best Results
-- Provide as much context as possible (street + postal code + city).
-- Remove obvious duplicates or invalid addresses before processing.
-- Keep geocoding batches modest to respect Nominatim’s usage policy. The app waits between requests, but heavy usage can still be throttled.
-- If the map shows fewer points than expected, inspect the `_geocoded.xlsx` file for missing coordinates.
+## Tips for Best Results
+
+- Provide complete addresses (street + city + postal code) for higher accuracy
+- Remove duplicates or obviously invalid addresses before processing
+- Keep batch sizes reasonable – Nominatim has usage limits and the app waits between requests
+- If markers are missing, check the `_geocoded.xlsx` file for blank coordinates
 
 ---
 
-## 7. Troubleshooting
-| Issue | What to check |
-| --- | --- |
-| “No columns found” | Ensure the first worksheet has a header row. |
-| Blank latitude/longitude | The address could not be resolved – verify spelling or add postal codes. |
-| GUI doesn’t launch | Install the latest Visual C++ redistributables and make sure `.NET Desktop Runtime` is available (PyInstaller builds sometimes require them). |
-| “Map generation failed” message | Confirm that `latitude` and `longitude` columns exist in the output workbook. |
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "No columns found" | Ensure the first worksheet has a header row |
+| Blank latitude/longitude | Address could not be resolved – verify spelling or add postal codes |
+| GUI doesn't launch | Install Visual C++ Redistributables and .NET Desktop Runtime |
+| Map generation failed | Confirm `latitude` and `longitude` columns exist in the geocoded file |
 
 ---
 
-## 8. Advanced Usage (optional)
-- Run `python geocode_addresses.py --help` for the command-line interface used by the GUI.
-- Generate the executable yourself with:
-  ```powershell
-  & ".\.venv\Scripts\python.exe" -m PyInstaller GeocodeGUI.spec
-  ```
+## Dependencies
 
----
-
-## 9. Support & Feedback
-Encounter a bug or have a feature suggestion? Share:
-- The Excel columns you selected (screenshots help).
-- The exact error message.
-- The generated `_geocoded.xlsx` and `_map.html` if possible.
-
-Thanks for using the Excel Address Geocoder GUI!
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) – Modern GUI framework
+- [pandas](https://pandas.pydata.org/) – Data manipulation
+- [geopy](https://geopy.readthedocs.io/) – Geocoding via Nominatim
+- [folium](https://python-visualization.github.io/folium/) – Interactive maps
+- [geopandas](https://geopandas.org/) – Geospatial data handling
+- [openpyxl](https://openpyxl.readthedocs.io/) – Excel file support
+- [shapely](https://shapely.readthedocs.io/) – Geometric operations
